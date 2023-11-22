@@ -68,7 +68,7 @@ def get_meters(phase, model):
     """util function for meters"""
     meters = {}
     meters["CELoss"] = ScalarMeter("{}_CELoss".format(phase))
-    for k in 5: # top5 acc
+    for k in range(5): # top5 acc
         meters["top{}_accuracy".format(k)] = ScalarMeter(
             "{}_top{}_accuracy".format(phase, k)
         )
