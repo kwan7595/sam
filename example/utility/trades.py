@@ -14,7 +14,7 @@ def l2_norm(x):
     return squared_l2_norm(x).sqrt()
 
 
-def trades_loss(model,
+def AT_TRAIN(model,args,
                 x_natural,
                 y,
                 optimizer,
@@ -33,8 +33,11 @@ def trades_loss(model,
         for _ in range(perturb_steps):
             x_adv.requires_grad_()
             with torch.enable_grad():
-                loss_kl = criterion_kl(F.log_softmax(model(x_adv), dim=1),
+                if args.trades:
+                    loss_kl = criterion_kl(F.log_softmax(model(x_adv), dim=1),
                                        F.softmax(model(x_natural), dim=1))
+                else:
+                    loss_kl = F.cross_entropy(model(x_adv),y) #for AT, x= adv, y = label
             grad = torch.autograd.grad(loss_kl, [x_adv])[0]
             x_adv = x_adv.detach() + step_size * torch.sign(grad.detach())
             x_adv = torch.min(torch.max(x_adv, x_natural - epsilon), x_natural + epsilon)
@@ -52,8 +55,11 @@ def trades_loss(model,
             # optimize
             optimizer_delta.zero_grad()
             with torch.enable_grad():
-                loss = (-1) * criterion_kl(F.log_softmax(model(adv), dim=1),
-                                           F.softmax(model(x_natural), dim=1))
+                if args.trades: # why -1?
+                    loss = (-1) * criterion_kl(F.log_softmax(model(adv), dim=1),
+                                            F.softmax(model(x_natural), dim=1))
+                else:
+                    loss = (-1) * F.cross_entropy(model(x_adv),y)
             loss.backward()
             # renorming gradient
             grad_norms = delta.grad.view(batch_size, -1).norm(p=2, dim=1)
@@ -78,7 +84,12 @@ def trades_loss(model,
     # calculate robust loss
     logits = model(x_natural)
     loss_natural = F.cross_entropy(logits, y)
-    loss_robust = (1.0 / batch_size) * criterion_kl(F.log_softmax(model(x_adv), dim=1),
-                                                    F.softmax(model(x_natural), dim=1))
+    if args.trades:
+        loss_robust = (1.0 / batch_size) * criterion_kl(F.log_softmax(model(x_adv), dim=1),
+                                                        F.softmax(model(x_natural), dim=1))
+    else:
+        loss_robust = F.cross_entropy(model(x_adv),y)
+    adv_pred = model(x_adv)
+    pred = logits
     loss = loss_natural + beta * loss_robust
-    return loss
+    return loss, loss_natural, loss_robust,adv_pred,pred
