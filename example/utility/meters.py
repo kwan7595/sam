@@ -71,12 +71,12 @@ def get_meters(phase, model):
     meters["natural_loss"] = ScalarMeter("{}_natural_loss".format(phase))
     meters["robust_loss"] = ScalarMeter("{}_robust_loss".format(phase))
     for k in range(5): # top5 acc
-        meters["top{}_accuracy".format(k)] = ScalarMeter(
-            "{}_top{}_accuracy".format(phase, k)
+        meters["top{}_accuracy".format(k+1)] = ScalarMeter(
+            "{}_top{}_accuracy".format(phase, k+1)
         )
     for k in range(5): # top5 acc
-        meters["top{}_adv_accuracy".format(k)] = ScalarMeter(
-            "{}_top{}_adv_accuracy".format(phase, k)
+        meters["top{}_adv_accuracy".format(k+1)] = ScalarMeter(
+            "{}_top{}_adv_accuracy".format(phase, k+1)
         )
 
     if hasattr(model, 'module') and hasattr(model.module, "__losses__"):

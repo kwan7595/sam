@@ -24,10 +24,11 @@ def adv_train(args,model,log,device,dataset,optimizer,train_meters,epoch,schedul
         enable_running_stats(model)
         x_natural, y = (b.to(device) for b in batch)
         loss, loss_natural,loss_robust,adv_pred,pred= AT_TRAIN(model,args,x_natural,y,optimizer)
-        val_meters["natural_loss"].cache((loss_natural).cpu().detach().numpy())
-        val_meters["robust_loss"].cache((loss_robust).cpu().detach().numpy())
-        loss.backward()
-        optimizer.step()
+        train_meters["natural_loss"].cache((loss_natural).cpu().detach().numpy())
+        train_meters["robust_loss"].cache((loss_robust).cpu().detach().numpy())
+        #loss.backward()
+        #optimizer.step()
+
         with torch.no_grad():
             #acc calculation
             adv_correct = torch.argmax(adv_pred.data,1) == y
@@ -43,8 +44,9 @@ def adv_train(args,model,log,device,dataset,optimizer,train_meters,epoch,schedul
                 correct_k = corrects[:k].float().sum(0)
                 adv_acc_list = list(adv_correct_k.cpu().detach().numpy())
                 acc_list = list(correct_k.cpu().detach().numpy())
-                val_meters["top{}_adv_accuracy".format(k)].cache_list(adv_acc_list)
-                val_meters["top{}_accuracy".format(k)].cache_list(acc_list)
+                train_meters["top{}_adv_accuracy".format(k+1)].cache_list(adv_acc_list)
+                train_meters["top{}_accuracy".format(k+1)].cache_list(acc_list)
+            scheduler(epoch) # for default lr scheduler
             # log(model, loss.cpu(), correct.cpu(),scheduler.lr)
         if (batch_idx % 10) == 0:
             print(
@@ -96,7 +98,7 @@ def train(args,model,log,device,dataset,optimizer,train_meters,epoch,scheduler):
             for k in range(5):
                 correct_k = corrects[:k].float().sum(0)
                 acc_list = list(correct_k.cpu().detach().numpy())
-                train_meters["top{}_accuracy".format(k)].cache_list(acc_list)
+                train_meters["top{}_accuracy".format(k+1)].cache_list(acc_list)
             log(model, loss.cpu(), correct.cpu(), scheduler.lr())
             scheduler(epoch) # for default lr scheduler
             #scheduler.step() # for cosineif (batch_idx % 10) == 0:
@@ -125,7 +127,7 @@ def val(model,log,dataset,val_meters,optimizer,scheduler,epoch):
             for k in range(5):
                 correct_k = corrects[:k].float().sum(0)
                 acc_list = list(correct_k.cpu().detach().numpy())
-                val_meters["top{}_accuracy".format(k)].cache_list(acc_list)
+                val_meters["top{}_accuracy".format(k+1)].cache_list(acc_list)
             log(model, loss.cpu(), correct.cpu())
             
     results = flush_scalar_meters(val_meters)
@@ -160,8 +162,8 @@ def adv_val(model,log,dataset,val_meters,optimizer,scheduler,epoch):
                     correct_k = corrects[:k].float().sum(0)
                     adv_acc_list = list(adv_correct_k.cpu().detach().numpy())
                     acc_list = list(correct_k.cpu().detach().numpy())
-                    val_meters["top{}_adv_accuracy".format(k)].cache_list(adv_acc_list)
-                    val_meters["top{}_accuracy".format(k)].cache_list(acc_list)
+                    val_meters["top{}_adv_accuracy".format(k+1)].cache_list(adv_acc_list)
+                    val_meters["top{}_accuracy".format(k+1)].cache_list(acc_list)
                 # log(model, loss.cpu(), correct.cpu(),scheduler.lr)
             if (batch_idx % 10) == 0:
                 print(
@@ -202,8 +204,8 @@ if __name__ == "__main__":
     dataset = Cifar(args.batch_size, args.threads)
     log = Log(log_each=10)
     model = WideResNet(args.depth, args.width_factor, args.dropout, in_channels=3, labels=10).to(device)
-    writer = SummaryWriter(log_dir = "./samat/runs") # directory for tensorboard logs
-    log_dir = "./samat/best_checkpoint" # directory for model checkpoints
+    writer = SummaryWriter(log_dir = "../test/runs") # directory for tensorboard logs
+    log_dir = "../test/best_checkpoint" # directory for model checkpoints
     train_meters = get_meters("train",model)
     val_meters = get_meters("val",model)
     val_meters["best_val"] = ScalarMeter("best_val")
@@ -229,25 +231,25 @@ if __name__ == "__main__":
         if args.bilevel:
             if epoch%2==0: # train
                 train(args,model,log,device,dataset,optimizer,train_meters,epoch,scheduler)
-                pass
             else: # adv train
                 adv_train(args,model,log,device,dataset,bilevel_optim,train_meters,epoch,bilevel_scheduler)
-                pass
             results = adv_val(model,log,dataset,val_meters,bilevel_optim,bilevel_scheduler,epoch)
             if results["top1_accuracy"] > best_val:
                 best_val = results["top1_accuracy"]
                 torch.save(model, os.path.join(log_dir, "best.pth"))
-        else:
-            results = val(model,log,dataset,val_meters,optimizer,scheduler,epoch)
+        else: # normal training
+            adv_train(args,model,log,device,dataset,optimizer,train_meters,epoch,scheduler)
+            #train(args,model,log,device,dataset,optimizer,train_meters,epoch,scheduler)
+            results = adv_val(model,log,dataset,val_meters,optimizer,scheduler,epoch)
             if results["top1_accuracy"] > best_val:
                 best_val = results["top1_accuracy"]
-            torch.save(model, os.path.join(log_dir, "best.pth"))
+                torch.save(model, os.path.join(log_dir, "best.pth"))
         
         writer.add_scalar("val/best_val", best_val, epoch)
         if epoch ==0 or (epoch+1) % 10 == 0:
                 torch.save(
                     model,
-                    os.path.join("./samat/checkpoint","epoch_{}.pth".format(epoch))
+                    os.path.join("../test/checkpoint","epoch_{}.pth".format(epoch))
                 )
 
     log.flush()

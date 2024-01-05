@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import torch.optim as optim
-
+from model.smooth_cross_entropy import smooth_crossentropy
 
 def squared_l2_norm(x):
     flattened = x.view(x.unsqueeze(0).shape[0], -1)
@@ -82,17 +82,27 @@ def AT_TRAIN(model,args,
     # zero gradient
     optimizer.zero_grad()
     # calculate robust loss
-    logits = model(x_natural)
-    loss_natural = F.cross_entropy(logits, y)
+    #logits = model(x_natural)
+    #loss_natural = F.cross_entropy(logits, y)
+    predictions = model(x_natural)
+    # first forward-backward step
+    natural_loss = smooth_crossentropy(predictions, y, smoothing=args.label_smoothing)
+    natural_loss = natural_loss.mean()
+    #train_meters["CELoss"].cache((loss_sam.sum()/loss_sam.size(0)).cpu().detach().numpy())
+    natural_loss.mean().backward() #+ adv loss 
+    optimizer.first_step(zero_grad=True)
     if args.trades:
-        loss_robust = (1.0 / batch_size) * criterion_kl(F.log_softmax(model(x_adv), dim=1),
-                                                        F.softmax(model(x_natural), dim=1))
+        loss_robust = (1.0 / batch_size) * criterion_kl(F.log_softmax(model(x_adv), dim=1),                                                        F.softmax(model(x_natural), dim=1))
     else:
         loss_robust = F.cross_entropy(model(x_adv),y)
-    adv_pred = model(x_adv)
-    pred = logits
-    loss = loss_natural + beta * loss_robust
-    return loss, loss_natural, loss_robust,adv_pred,pred
+    # second forward-backward step
+    loss_sam = smooth_crossentropy(model(x_natural), y, smoothing=args.label_smoothing)
+    loss = loss_sam.mean() + beta * loss_robust
+    loss.backward()
+    optimizer.second_step(zero_grad=True)
+    with torch.no_grad():
+        adv_pred = model(x_adv)
+    return loss, natural_loss, loss_robust,adv_pred,predictions
 
 import torch
 import torch.nn as nn
